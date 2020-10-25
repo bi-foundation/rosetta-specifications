@@ -72,6 +72,12 @@ equals balance on node  |                                                       
       and incoming deposits        X                 v                                |
                                    X  Get a Specific Mempool Transaction +---------------------> /mempool/transaction
                                    X                                                  |
+                                                                                      |
+                                                                                      |
+                                   X                                                  |
+  Make arbitrary call to to access X  Make Arbitrary Procedure Call +--------------------------> /call
+  network-specific data            X                                                  |
+                                   X                                                  |
                                                                                       +
 ```
 
@@ -181,6 +187,32 @@ of transactions on any blockchain that supports Rosetta with no modification.
 You could, for example, build a [WalletLink](https://www.walletlink.org/) service
 that worked with any blockchain.
 
+## Modules
+For blockchains with smart contracts, it is usually not possible to add high fidelity
+support for each deployed contract to the "core" Rosetta implementation. Accessing any
+contract often requires generating some SDK and making very contract-specific access
+decisions that can introduce significant complexity into the "core" implementation.
+
+So, no smart contract interaction in Rosetta? Think again!
+
+To empower developers to build Rosetta API implementations for a given smart contract
+on top of your "core" implementation, we recommend implementing the `/call` endpoint
+and providing support for common network-specific endpoints that would be used to
+read or modify contract state. In theory, you could stack any number of Rosetta API
+implementations on top of each other where each child implementation calls some
+set of primitives exposed in this `/call` endpoint.
+
+In the case of Ethereum, a group of developers could implement a core
+`rosetta-ethereum` implementation that provides the ability to track
+and create ETH transfers and another group of developers could write a
+`rosetta-erc20` that allows for tracking and creating ERC-20 token transfers
+using the `eth_call` method exposed by `rosetta-ethereum`. Another group of
+developers could write an implementation that tracks DEX trades, lending activity,
+or even validator performance. You can see an example of how this would work in
+this illustration:
+
+![Rosetta Modules](images/rosetta-modules.png)
+
 ## Documentation
 Now that you have some familiarity with the flow of operations, we recommend taking a look at the Rosetta API Docs:
 
@@ -230,12 +262,20 @@ Construction API implementation.
 
 ### Supported CurveTypes
 * secp256k1: SEC compressed - `33 bytes` (https://secg.org/sec1-v2.pdf#subsubsection.2.3.3)
+* secp256r1: SEC compressed - `33 bytes` (https://secg.org/sec1-v2.pdf#subsubsection.2.3.3)
 * edwards25519: `y (255-bits) || x-sign-bit (1-bit)` - `32 bytes` (https://ed25519.cr.yp.to/ed25519-20110926.pdf)
+* tweedle: 1st pk : Fq.t (32 bytes) || 2nd pk : Fq.t (32 bytes) (https://github.com/CodaProtocol/coda/blob/develop/rfcs/0038-rosetta-construction-api.md#marshal-keys)
 
 ### Supported SignatureTypes
 * ecdsa: `r (32-bytes) || s (32-bytes)` - `64 bytes`
 * ecdsa_recovery: `r (32-bytes) || s (32-bytes) || v (1-byte)` - `65 bytes`
 * ed25519: `R (32-byte) || s (32-bytes)` - `64 bytes`
+* schnorr_1: `r (32-bytes) || s (32-bytes)` - `64 bytes`
+* schnorr_poseidon: `r (32-bytes) || s (32-bytes) where s = Hash(1st pk || 2nd pk || r)` - `64 bytes`
+
+`schnorr_1` is a EC-Schnorr signature implemented by Zilliqa where both `r` and `s` are scalars encoded as `32-bytes` values, most significant byte first. Refer to [Zilliqa's Schnorr Library](https://github.com/Zilliqa/schnorr/blob/master/src/libSchnorr/src/Schnorr.cpp#L86) and [Zilliqa Technical Whitepaper - Appendix A: Schnorr Digital Signature](https://docs.zilliqa.com/whitepaper.pdf) for details.)
+
+`schnorr_poseidon` is an EC-schnorr signature with Poseidon hash function implemented by O(1) Labs where both `r` and `s` are scalars encoded as `32-bytes` little-endian values. Refer to [Coda's signer reference implementation](https://github.com/CodaProtocol/signer-reference/blob/master/schnorr.ml#L92)
 
 ### Decoupled Signature Schemes
 CurveType and SignatureType are purposely decoupled as a curve could be used
@@ -270,6 +310,7 @@ endpoints (other than `/construction/metadata` and `/construction/submit`).
 * `/block/*`
 * `/account/*`
 * `/mempool/*`
+* `/call`
 * `/construction/metadata`
 * `/construction/submit`
 
